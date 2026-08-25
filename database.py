@@ -22,11 +22,15 @@ BASE_COORDS = (22.345415, 114.192640)
 def init_sqlite_database():
     """直接解析單個 GeoJSON 檔案 (Bus_data.json.json)，生成純繁體 SQL 倉庫"""
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    
-    # 絕對路徑定位：直接從 programing 根目錄出發尋找 data 資料夾
-    project_root = os.path.dirname(current_dir) # 取得 python 的上一層 (programing)
-    geojson_path = os.path.join(project_root, "data", "Bus_data.json.json")
     db_path = os.path.join(current_dir, DB_FILE)
+
+    # 🛠️ 雲端+本地黃金相容路徑判定
+    # 策略：如果當前目錄下有 data，就用當前目錄；否則嘗試上一層目錄
+    if os.path.exists(os.path.join(current_dir, "data", "Bus_data.json.json")):
+        geojson_path = os.path.join(current_dir, "data", "Bus_data.json.json")
+    else:
+        project_root = os.path.dirname(current_dir)
+        geojson_path = os.path.join(project_root, "data", "Bus_data.json.json")
 
     # 強制刪除舊的快取資料庫檔案，避免抓到舊的空表格
     if os.path.exists(db_path):
@@ -48,7 +52,7 @@ def init_sqlite_database():
             props = feature.get("properties", {}).copy()
             coords = feature.get("geometry", {}).get("coordinates", [None, None])
             
-            # 🛠️ 修正點：利用 [0] 和 [1] 正確拆解經緯度清單元素，防止 float() 報錯
+            # 利用 和 正確拆解經緯度清單元素，防止 float() 報錯
             if isinstance(coords, list) and len(coords) >= 2:
                 props["long"] = float(coords[0]) if coords[0] is not None else None
                 props["lat"] = float(coords[1]) if coords[1] is not None else None
@@ -70,13 +74,9 @@ def init_sqlite_database():
             potential_cols = [c for c in final_df.columns if 'route' in c.lower() and not any(k in c.lower() for k in ['type', 'seq', 'id', 'mode'])]
             if potential_cols:
                 route_col = potential_cols[0]
-                st.warning(f"⚠️ 找不到 'routeNameC'，系統已自動綁定最接近的欄位：'{route_col}' 作為路線名稱。")
-            else:
-                st.error(f"❌ 在您的 JSON properties 中完全找不到任何與 'route' 相關的欄位！目前現有的欄位有：{list(final_df.columns)}")
-                st.stop()
         
         # 🛠️ 模糊匹配站點名稱欄位
-        stop_name_col = 'stopNameC' if 'stopNameC' in final_df.columns else ([c for c in final_df.columns if 'stopname' in c.lower() or 'name' in c.lower()] + ['stopNameC'])[0]
+        stop_name_col = 'stopNameC' if 'stopNameC' in final_df.columns else 'stopNameC'
 
         # ⚙️ 欄位標準化重命名，完美對接您原有的前端邏輯
         final_df = final_df.rename(columns={
@@ -191,14 +191,22 @@ with tab1:
             with st.spinner("正在即時計算該路線各站點距離..."):
                 df_result['距離'] = df_result.apply(calc_distance_background, axis=1)
             
-            # 📌 定義基礎展示欄位
-            show_cols = ['seq', 'name_tc', '距離', 'stop']
+            # 布局切分：左邊表格，右邊即時地圖
+            col1, col2 = st.columns(2)
             
-            # 📌 自動抽取新檔案帶來的精美商務欄位
-            custom_cols = [c for c in df_result.columns if c not in show_cols + ['bound', 'service_type', 'orig_tc', 'dest_tc', 'lat', 'long', 'route', 'serviceMode', 'routeType']]
-            all_show_cols = show_cols + custom_cols
+            with col1:
+                st.markdown("**📌 站點明細列表**")
+                show_cols = ['seq', 'name_tc', '距離', 'stop']
+                custom_cols = [c for c in df_result.columns if c not in show_cols + ['bound', 'service_type', 'orig_tc', 'dest_tc', 'lat', 'long', 'route', 'serviceMode', 'routeType']]
+                all_show_cols = show_cols + custom_cols
+                st.dataframe(df_result[all_show_cols].rename(columns={'seq': '站序', 'name_tc': '站點名稱'}), use_container_width=True)
             
-            st.dataframe(df_result[all_show_cols].rename(columns={'seq': '站序', 'name_tc': '站點名稱'}), use_container_width=True)
+            with col2:
+                st.markdown("**🗺️ 路線地理軌跡分佈**")
+                map_df = df_result[['lat', 'long']].dropna()
+                map_df['lat'] = pd.to_numeric(map_df['lat'])
+                map_df['long'] = pd.to_numeric(map_df['long'])
+                st.map(map_df, use_container_width=True)
         else:
             st.warning("無對應路線資料。")
     else:
