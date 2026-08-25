@@ -51,8 +51,10 @@ with tab1:
         df_result = df_filtered_route[df_filtered_route['bound'] == selected_bound].sort_values('seq').copy()
         
         if not df_result.empty:
-            orig_station = df_result['orig_tc'].iloc if 'orig_tc' in df_result.columns and len(df_result) > 0 else ""
-            dest_station = df_result['dest_tc'].iloc if 'dest_tc' in df_result.columns and len(df_result) > 0 else ""
+            # 🛠️ 終極修復點：加上 [0] 索引，徹底移除網頁上的 pandas core indexing 記憶體物件字串
+            orig_station = df_result['orig_tc'].iloc[0] if 'orig_tc' in df_result.columns and len(df_result) > 0 else ""
+            dest_station = df_result['dest_tc'].iloc[0] if 'dest_tc' in df_result.columns and len(df_result) > 0 else ""
+            
             st.markdown(f"### 🗺️ 路線總覽：{orig_station} ➔ {dest_station}")
             st.caption("💡 距離欄位是以「竹園邨總站」為基準點進行背景地理空間計算後的結果。")
             
@@ -66,7 +68,7 @@ with tab1:
             with st.spinner("正在即時計算該路線各站點距離..."):
                 df_result['距離'] = df_result.apply(calc_distance_background, axis=1)
             
-            # 🛠️ 關鍵修正：移除左右兩欄佈局與 st.map()，讓表格直接全螢幕展開展示
+            # 全螢幕表格寬度優化展示
             st.markdown("**📌 站點明細列表**")
             show_cols = ['seq', 'name_tc', '距離', 'stop']
             custom_cols = [c for c in df_result.columns if c not in show_cols + ['bound', 'service_type', 'orig_tc', 'dest_tc', 'lat', 'long', 'route', 'serviceMode', 'routeType']]
